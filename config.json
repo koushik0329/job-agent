@@ -1,0 +1,19 @@
+{
+  "keep_days": 30,
+  "max_jobs": 3000,
+  "dashboard_url": "",
+  "sources": {
+    "remotive":  { "enabled": true, "min_interval_hours": 6 },
+    "remoteok":  { "enabled": true, "min_interval_hours": 1 },
+    "arbeitnow": { "enabled": true, "min_interval_hours": 1, "pages": 2 },
+    "themuse":   { "enabled": true, "min_interval_hours": 1, "pages": 3 }
+  },
+  "discord": {
+    "include_keywords": ["developer", "engineer", "python", "data"],
+    "exclude_keywords": ["senior director", "intern"],
+    "remote_only": false,
+    "locations": [],
+    "max_per_run": 10,
+    "post_when_empty": false
+  }
+}

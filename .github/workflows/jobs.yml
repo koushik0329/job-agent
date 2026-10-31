@@ -1,0 +1,42 @@
+name: Fetch jobs
+
+on:
+  schedule:
+    - cron: "7 * * * *"   # every hour at minute 7 (UTC)
+  workflow_dispatch:       # lets you run it manually from the Actions tab
+
+permissions:
+  contents: write          # needed to commit docs/jobs.json back to the repo
+
+concurrency:
+  group: fetch-jobs
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch jobs and post to Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python fetch_jobs.py
+
+      - name: Commit updated data
+        run: |
+          git config user.name "job-agent[bot]"
+          git config user.email "job-agent@users.noreply.github.com"
+          git add docs/jobs.json data/
+          if git diff --staged --quiet; then
+            echo "Nothing to commit"
+          else
+            git commit -m "Update jobs"
+            git pull --rebase
+            git push
+          fi

@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job Board</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1b1f24; --muted: #667085;
+    --line: #e3e6eb; --accent: #4f46e5; --accent-soft: #eef0ff; --ok: #0f9d58;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --card: #181b21; --text: #e8eaee; --muted: #98a2b3;
+      --line: #2a2f38; --accent: #8b93ff; --accent-soft: #23264a; --ok: #43c883;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  header { padding: 24px 16px 8px; max-width: 1100px; margin: 0 auto; }
+  h1 { margin: 0; font-size: 24px; }
+  #meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  main {
+    max-width: 1100px; margin: 0 auto; padding: 12px 16px 48px;
+    display: grid; grid-template-columns: 260px 1fr; gap: 20px; align-items: start;
+  }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+  .filters {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px; display: grid; gap: 12px; position: sticky; top: 12px;
+  }
+  @media (max-width: 760px) { .filters { position: static; } }
+  label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+  label.check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); font-weight: 500; }
+  input[type=search], input[type=text], select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--text); font: inherit;
+  }
+  button {
+    font: inherit; cursor: pointer; border-radius: 8px; padding: 8px 12px;
+    border: 1px solid var(--line); background: var(--card); color: var(--text);
+  }
+  button:hover { border-color: var(--accent); }
+  #count { font-size: 13px; color: var(--muted); margin: 0 0 10px; }
+  .job {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px 16px; margin-bottom: 10px;
+  }
+  .job h2 { margin: 0 0 2px; font-size: 16px; }
+  .job h2 a { color: var(--text); text-decoration: none; }
+  .job h2 a:hover { color: var(--accent); text-decoration: underline; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
+  .chip {
+    font-size: 12px; padding: 2px 8px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .chip.remote { background: transparent; border: 1px solid var(--ok); color: var(--ok); }
+  .chip.salary { background: transparent; border: 1px solid var(--line); color: var(--text); }
+  .summary { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+  .empty, .error { text-align: center; color: var(--muted); padding: 40px 0; }
+  #more { display: block; margin: 16px auto 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Job Board</h1>
+  <div id="meta">Loading…</div>
+</header>
+
+<main>
+  <aside class="filters">
+    <label>Search
+      <input id="q" type="search" placeholder="python backend  (-word to exclude)">
+    </label>
+    <label>Posted within
+      <select id="within">
+        <option value="0">Any time</option>
+        <option value="1">Last 24 hours</option>
+        <option value="3">Last 3 days</option>
+        <option value="7">Last 7 days</option>
+        <option value="14">Last 14 days</option>
+      </select>
+    </label>
+    <label>Location contains
+      <input id="loc" type="text" placeholder="e.g. usa, europe, india">
+    </label>
+    <label>Category
+      <select id="cat"><option value="">All</option></select>
+    </label>
+    <label>Job type
+      <select id="type"><option value="">All</option></select>
+    </label>
+    <label>Source
+      <select id="src"><option value="">All</option></select>
+    </label>
+    <label class="check"><input id="remote" type="checkbox"> Remote only</label>
+    <label class="check"><input id="salary" type="checkbox"> Salary listed</label>
+    <label>Sort by
+      <select id="sort">
+        <option value="new">Newest first</option>
+        <option value="company">Company A–Z</option>
+        <option value="title">Title A–Z</option>
+      </select>
+    </label>
+    <button id="reset" type="button">Reset filters</button>
+  </aside>
+
+  <section>
+    <p id="count"></p>
+    <div id="list"></div>
+    <button id="more" type="button" hidden>Show more</button>
+  </section>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var PAGE = 40;
+  var STORE_KEY = "jobboard-filters-v1";
+  var jobs = [];
+  var shown = PAGE;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var controls = ["q", "within", "loc", "cat", "type", "src", "remote", "salary", "sort"];
+
+  function h(tag, cls, text) {
+    var el = document.createElement(tag);
+    if (cls) el.className = cls;
+    if (text != null) el.textContent = text;
+    return el;
+  }
+
+  function ago(iso) {
+    var s = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (isNaN(s)) return "";
+    if (s < 3600) return Math.max(1, Math.round(s / 60)) + " min ago";
+    if (s < 86400) return Math.round(s / 3600) + " h ago";
+    var d = Math.round(s / 86400);
+    return d + (d === 1 ? " day ago" : " days ago");
+  }
+
+  function safeUrl(u) { return /^https?:\/\//i.test(u || "") ? u : "#"; }
+
+  function saveFilters() {
+    try {
+      var o = {};
+      controls.forEach(function (id) {
+        var el = $(id);
+        o[id] = el.type === "checkbox" ? el.checked : el.value;
+      });
+      localStorage.setItem(STORE_KEY, JSON.stringify(o));
+    } catch (e) { /* storage unavailable: fine */ }
+  }
+
+  function restoreFilters() {
+    try {
+      var o = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+      controls.forEach(function (id) {
+        if (!(id in o)) return;
+        var el = $(id);
+        if (el.type === "checkbox") el.checked = !!o[id];
+        else if (el.tagName !== "SELECT" || Array.prototype.some.call(el.options, function (op) { return op.value === o[id]; })) el.value = o[id];
+      });
+    } catch (e) { /* ignore */ }
+  }
+
+  function fillSelect(id, values) {
+    var sel = $(id);
+    var counts = {};
+    values.forEach(function (v) { if (v) counts[v] = (counts[v] || 0) + 1; });
+    Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; }).slice(0, 60).forEach(function (v) {
+      var o = document.createElement("option");
+      o.value = v; o.textContent = v + " (" + counts[v] + ")";
+      sel.appendChild(o);
+    });
+  }
+
+  function filtered() {
+    var terms = $("q").value.toLowerCase().split(/\s+/).filter(Boolean);
+    var inc = terms.filter(function (t) { return t[0] !== "-"; });
+    var exc = terms.filter(function (t) { return t[0] === "-" && t.length > 1; }).map(function (t) { return t.slice(1); });
+    var within = Number($("within").value);
+    var loc = $("loc").value.trim().toLowerCase();
+    var cat = $("cat").value, type = $("type").value, src = $("src").value;
+    var remote = $("remote").checked, salary = $("salary").checked;
+    var cutoff = within ? Date.now() - within * 86400000 : 0;
+
+    var out = jobs.filter(function (j) {
+      if (remote && !j.remote) return false;
+      if (salary && !j.salary) return false;
+      if (cat && j.category !== cat) return false;
+      if (type && j.type !== type) return false;
+      if (src && j.source !== src) return false;
+      if (cutoff && new Date(j.posted).getTime() < cutoff) return false;
+      if (loc && j.location.toLowerCase().indexOf(loc) === -1) return false;
+      if (inc.length || exc.length) {
+        var hay = (j.title + " " + j.company + " " + j.location + " " + j.category + " " +
+                   j.tags.join(" ") + " " + j.summary).toLowerCase();
+        for (var i = 0; i < inc.length; i++) if (hay.indexOf(inc[i]) === -1) return false;
+        for (var k = 0; k < exc.length; k++) if (hay.indexOf(exc[k]) !== -1) return false;
+      }
+      return true;
+    });
+
+    var sort = $("sort").value;
+    if (sort === "company") out.sort(function (a, b) { return a.company.localeCompare(b.company); });
+    else if (sort === "title") out.sort(function (a, b) { return a.title.localeCompare(b.title); });
+    else out.sort(function (a, b) { return (b.posted || "").localeCompare(a.posted || ""); });
+    return out;
+  }
+
+  function card(j) {
+    var box = h("article", "job");
+    var title = h("h2");
+    var a = h("a", null, j.title);
+    a.href = safeUrl(j.url); a.target = "_blank"; a.rel = "noopener noreferrer";
+    title.appendChild(a);
+    box.appendChild(title);
+    box.appendChild(h("div", "sub", j.company + " · " + j.location + " · " + ago(j.posted) + " · " + j.source));
+
+    var chips = h("div", "chips");
+    if (j.remote) chips.appendChild(h("span", "chip remote", "Remote"));
+    if (j.salary) chips.appendChild(h("span", "chip salary", j.salary));
+    if (j.type) chips.appendChild(h("span", "chip", j.type));
+    if (j.category) chips.appendChild(h("span", "chip", j.category));
+    j.tags.slice(0, 4).forEach(function (t) { chips.appendChild(h("span", "chip", t)); });
+    if (chips.childNodes.length) box.appendChild(chips);
+
+    if (j.summary) box.appendChild(h("p", "summary", j.summary));
+    return box;
+  }
+
+  function render() {
+    var list = filtered();
+    var box = $("list");
+    box.textContent = "";
+    $("count").textContent = list.length + " of " + jobs.length + " jobs";
+    if (!list.length) {
+      box.appendChild(h("div", "empty", "No jobs match these filters."));
+    } else {
+      list.slice(0, shown).forEach(function (j) { box.appendChild(card(j)); });
+    }
+    $("more").hidden = list.length <= shown;
+  }
+
+  function onChange() { shown = PAGE; saveFilters(); render(); }
+
+  function init(data) {
+    jobs = (data.jobs || []).filter(function (j) { return j && j.title && j.url; });
+    jobs.forEach(function (j) {
+      j.tags = j.tags || []; j.summary = j.summary || ""; j.location = j.location || "";
+      j.company = j.company || ""; j.category = j.category || ""; j.type = j.type || "";
+    });
+    $("meta").textContent = data.updated
+      ? jobs.length + " jobs · updated " + ago(data.updated) + " (refreshes hourly)"
+      : "No data yet. Run the GitHub Action once to fetch jobs.";
+
+    fillSelect("cat", jobs.map(function (j) { return j.category; }));
+    fillSelect("type", jobs.map(function (j) { return j.type; }));
+    var srcSel = $("src");
+    var sources = {};
+    jobs.forEach(function (j) { sources[j.source] = (sources[j.source] || 0) + 1; });
+    Object.keys(sources).sort().forEach(function (s) {
+      var o = document.createElement("option");
+      o.value = s; o.textContent = s + " (" + sources[s] + ")";
+      srcSel.appendChild(o);
+    });
+
+    // The select options show counts, so match saved values on the value, not the label.
+    restoreFilters();
+    controls.forEach(function (id) {
+      $(id).addEventListener(id === "q" || id === "loc" ? "input" : "change", onChange);
+    });
+    $("reset").addEventListener("click", function () {
+      controls.forEach(function (id) {
+        var el = $(id);
+        if (el.type === "checkbox") el.checked = false;
+        else if (el.tagName === "SELECT") el.selectedIndex = 0;
+        else el.value = "";
+      });
+      onChange();
+    });
+    $("more").addEventListener("click", function () { shown += PAGE; render(); });
+    render();
+  }
+
+  fetch("jobs.json?t=" + Date.now(), { cache: "no-store" })
+    .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .then(init)
+    .catch(function (e) {
+      $("meta").textContent = "";
+      var err = h("div", "error", "Couldn't load jobs.json (" + e.message + ").");
+      $("list").appendChild(err);
+    });
+})();
+</script>
+</body>
+</html>
